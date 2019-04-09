@@ -4,6 +4,8 @@
 #### Result type
 
 """
+    KmedoidsResult{T} <: ClusteringResult
+
 The output of [`kmedoids`](@ref) function.
 
 # Fields
@@ -37,19 +39,17 @@ const _kmed_default_tol = 1.0e-8
 const _kmed_default_display = :none
 
 """
-    kmedoids(costs::DenseMatrix, k::Integer; ...)
+    kmedoids(costs::DenseMatrix, k::Integer; ...) -> KmedoidsResult
 
-Performs K-medoids clustering of ``n`` points into `k` clusters,
-given the `costs` matrix (``n×n``, ``\\mathrm{costs}_{ij}`` is the cost of
-assigning ``j``-th point to the mediod represented by the ``i``-th point).
-
-Returns an object of type [`KmedoidsResult`](@ref).
+Perform K-medoids clustering of ``n`` points into `k` clusters,
+given the `costs` matrix (``n×n``, `costs[i, j]` is the cost of
+assigning `j`-th point to the medoid represented by the `i`-th point).
 
 # Note
 This package implements a K-means style algorithm instead of PAM, which
 is considered much more efficient and reliable.
 
-# Algorithm Options
+# Arguments
  - `init` (defaults to `:kmpp`): how medoids should be initialized, could
    be one of the following:
    * a `Symbol` indicating the name of a seeding algorithm (see
@@ -65,8 +65,8 @@ function kmedoids(costs::DenseMatrix{T}, k::Integer;
                   display::Symbol=_kmed_default_display) where T<:Real
     # check arguments
     n = size(costs, 1)
-    size(costs, 2) == n || error("costs must be a square matrix.")
-    k <= n || error("Number of medoids should be less than n.")
+    size(costs, 2) == n || throw(ArgumentError("costs must be a square matrix ($(size(costs)) given)."))
+    k <= n || throw(ArgumentError("Requested number of medoids exceeds n=$n ($k given)."))
 
     # initialize medoids
     medoids = initseeds_by_costs(init, costs, k)::Vector{Int}
@@ -78,12 +78,13 @@ function kmedoids(costs::DenseMatrix{T}, k::Integer;
 end
 
 """
-    kmedoids!(costs::DenseMatrix, medoids::Vector{Int}; [kwargs...])
+    kmedoids!(costs::DenseMatrix, medoids::Vector{Int};
+              [kwargs...]) -> KmedoidsResult
 
-Performs K-medoids clustering starting with the provided indices of initial
-`medoids`.
+Update the current cluster `medoids` using the `costs` matrix.
 
-Returns [`KmedoidsResult`](@ref) object and updates the `medoids` indices in-place.
+The `medoids` field of the returned `KmedoidsResult` points to the same array
+as `medoids` argument.
 
 See [`kmedoids`](@ref) for the description of optional `kwargs`.
 """
@@ -94,8 +95,10 @@ function kmedoids!(costs::DenseMatrix{T}, medoids::Vector{Int};
 
     # check arguments
     n = size(costs, 1)
-    size(costs, 2) == n || error("costs must be a square matrix.")
-    length(medoids) <= n || error("Number of medoids should be less than n.")
+    size(costs, 2) == n ||
+        throw(ArgumentError("costs must be a square matrix ($(size(costs)) given)."))
+    length(medoids) <= n ||
+        throw(ArgumentError("Requested number of medoids exceeds n=$n ($(length(medoids)) given)."))
 
     # invoke core algorithm
     _kmedoids!(medoids, costs,

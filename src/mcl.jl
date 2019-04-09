@@ -1,6 +1,8 @@
 # MCL (Markov CLustering algorithm)
 
 """
+    MCLResult <: ClusteringResult
+
 The output of [`mcl`](@ref) function.
 
 # Fields
@@ -121,14 +123,13 @@ function _mcl_prune!(mtx::AbstractMatrix, prune_tol::Number)
 end
 
 """
-    mcl(adj::AbstractMatrix; [kwargs...])
+    mcl(adj::AbstractMatrix; [kwargs...]) -> MCLResult
 
 Perform MCL (Markov Cluster Algorithm) clustering using ``n×n``
 adjacency (points similarity) matrix `adj`.
 
-Returns [`MCLResult`](@ref) object.
-
-# Algorithm Options
+# Arguments
+Keyword arguments to control the MCL algorithm:
  - `add_loops::Bool` (enabled by default): whether the edges of weight 1.0
    from the node to itself should be appended to the graph
  - `expansion::Number` (defaults to 2): MCL *expansion* constant
@@ -137,11 +138,9 @@ Returns [`MCLResult`](@ref) object.
    equilibrium state in the `mcl_adj` field of the result; could provide useful
    diagnostic if the method doesn't converge
  - `prune_tol::Number`: pruning threshold
- - `display::Symbol` (defaults to `:none`): `:none` for no output or `:verbose`
-   for diagnostic messages
- - `max_iter`, `tol`: see [common options](@ref common_options)
+ - `display`, `maxiter`, `tol`: see [common options](@ref common_options)
 
-### References
+# References
 > Stijn van Dongen, *"Graph clustering by flow simulation"*, 2001
 
 > [Original MCL implementation](http://micans.org/mcl).
@@ -151,10 +150,26 @@ function mcl(adj::AbstractMatrix{T};
              expansion::Number = 2, inflation::Number = 2,
              save_final_matrix::Bool = false,
              allow_singles::Bool = true,
-             max_iter::Integer = 100, tol::Number=1.0e-5,
+             max_iter::Union{Integer, Nothing} = nothing,
+             maxiter::Integer = 100, tol::Number=1.0e-5,
              prune_tol::Number=1.0e-5, display::Symbol=:none) where T<:Real
     m, n = size(adj)
     m == n || throw(DimensionMismatch("Square adjacency matrix expected"))
+
+    # FIXME max_iter is deprecated as of 0.13.1
+    if max_iter !== nothing
+        Base.depwarn("max_iter parameter is deprecated, use maxiter instead",
+                     Symbol("mcl"))
+        maxiter = max_iter
+    end
+
+    # FIXME :verbose is deprecated as of 0.13.1
+    if display == :verbose
+        Base.depwarn("display=:verbose is deprecated and will be removed in future versions, use display=:iter",
+                     Symbol("mcl"))
+        display = :iter
+    end
+    disp_level = display_level(display)
 
     if add_loops
         @inbounds for i in 1:size(adj, 1)
@@ -173,13 +188,11 @@ function mcl(adj::AbstractMatrix{T};
     next_mcl_adj = similar(mcl_adj)
 
     # do MCL iterations
-    if display != :none
-        @info("Starting MCL iterations...")
-    end
+    (disp_level > 0) && @info("Starting MCL iterations...")
     niter = 0
     converged = false
     rel_delta = NaN
-    while !converged && niter < max_iter
+    while !converged && niter < maxiter
         expanded = _mcl_expand(mcl_adj, expansion)
         _mcl_inflate!(next_mcl_adj, expanded, inflation)
         _mcl_prune!(next_mcl_adj, prune_tol)
@@ -194,7 +207,7 @@ function mcl(adj::AbstractMatrix{T};
             break
         end
         rel_delta = euclidean(next_mcl_adj, mcl_adj)/mcl_norm
-        (display == :verbose) && @info("MCL iter. #$niter: rel.Δ=", rel_delta)
+        (disp_level == 2) && @info("MCL iter. #$niter: rel.Δ=", rel_delta)
         (converged = rel_delta <= tol) && break
         # update (swap) MCL adjacency
         niter += 1
@@ -203,15 +216,15 @@ function mcl(adj::AbstractMatrix{T};
         (mcl_norm < tol) && break # matrix is zero
     end
 
-    if display != :none
+    if disp_level > 0
         if converged
-            info("MCL converged after $niter iteration(s)")
+            @info "MCL converged after $niter iteration(s)"
         else
-            warn("MCL didn't converge after $niter iteration(s)")
+            @warn "MCL didn't converge after $niter iteration(s)"
         end
     end
 
-    (display == :verbose) && @info("Generating MCL clusters...")
+    (disp_level > 0) && @info("Generating MCL clusters...")
     el2clu, clu_sizes, nunassigned = _mcl_clusters(mcl_adj, allow_singles,
                                                    tol/length(mcl_adj))
 

@@ -9,7 +9,9 @@
 #### Interface
 
 """
-The result of affinity propagation clustering ([`affinityprop`](@ref)).
+    AffinityPropResult <: ClusteringResult
+
+The output of affinity propagation clustering ([`affinityprop`](@ref)).
 
 # Fields
  * `exemplars::Vector{Int}`: indices of *exemplars* (cluster centers)
@@ -32,7 +34,7 @@ const _afp_default_display = :none
 
 """
     affinityprop(S::DenseMatrix; [maxiter=200], [tol=1e-6], [damp=0.5],
-                 [display=:none])
+                 [display=:none]) -> AffinityPropResult
 
 Perform affinity propagation clustering based on a similarity matrix `S`.
 
@@ -40,17 +42,13 @@ Perform affinity propagation clustering based on a similarity matrix `S`.
 the ``i``-th and ``j``-th points, ``S_{ii}`` defines the *availability*
 of the ``i``-th point as an *exemplar*.
 
-Returns an instance of [`AffinityPropResult`](@ref).
-
-# Method parameters
+# Arguments
  - `damp::Real`: the dampening coefficient, ``0 ≤ \\mathrm{damp} < 1``.
    Larger values indicate slower (and probably more stable) update.
    ``\\mathrm{damp} = 0`` disables dampening.
  - `maxiter`, `tol`, `display`: see [common options](@ref common_options)
 
-# Notes
-The implementations is based on the following paper:
-
+# References
 > Brendan J. Frey and Delbert Dueck. *Clustering by Passing Messages
 > Between Data Points.* Science, vol 315, pages 972-976, 2007.
 """
@@ -62,10 +60,10 @@ function affinityprop(S::DenseMatrix{T};
 
     # check arguments
     n = size(S, 1)
-    size(S, 2) == n || error("S must be a square matrix.")
-    n >= 2 || error("the number of data points must be at least 2.")
-    tol > 0 || error("tol must be a positive value.")
-    0 <= damp < 1 || error("damp must be a non-negative real value below 1.")
+    size(S, 2) == n || throw(ArgumentError("S must be a square matrix ($(size(S)) given)."))
+    n >= 2 || throw(ArgumentError("At least two data points are required ($n given)."))
+    tol > 0 || throw(ArgumentError("tol must be a positive value ($tol given)."))
+    0 <= damp < 1 || throw(ArgumentError("damp must be a non-negative real value below 1 ($damp given)."))
 
     # invoke core implementation
     _affinityprop(S, round(Int, maxiter), tol, convert(T, damp), display_level(display))

@@ -7,9 +7,14 @@
 # WC is the type of cluster weights, either Int (in the case where points are
 # unweighted) or eltype(weights) (in the case where points are weighted).
 """
-The output of K-means algorithm.
+    KmeansResult{C,D<:Real,WC<:Real} <: ClusteringResult
 
-See also: [`kmeans`](@ref), [`kmeans!`](@ref).
+The output of [`kmeans`](@ref) and [`kmeans!`](@ref).
+
+# Type parameters
+ * `C<:AbstractMatrix{<:AbstractFloat}`: type of the `centers` matrix
+ * `D<:Real`: type of the assignment cost
+ * `WC<:Real`: type of the cluster weight
 """
 struct KmeansResult{C<:AbstractMatrix{<:AbstractFloat},D<:Real,WC<:Real} <: ClusteringResult
     centers::C                 # cluster centers (d x k)
@@ -28,13 +33,11 @@ const _kmeans_default_tol = 1.0e-6
 const _kmeans_default_display = :none
 
 """
-    kmeans!(X, centers; [kwargs...])
+    kmeans!(X, centers; [kwargs...]) -> KmeansResult
 
 Update the current cluster `centers` (``d×k`` matrix, where ``d`` is the
 dimension and ``k`` the number of centroids) using the ``d×n`` data
 matrix `X` (each column of `X` is a ``d``-dimensional data point).
-
-Returns `KmeansResult` object.
 
 See [`kmeans`](@ref) for the description of optional `kwargs`.
 """
@@ -49,7 +52,7 @@ function kmeans!(X::AbstractMatrix{<:Real},                # in: data matrix (d 
     dc, k = size(centers)
 
     d == dc || throw(DimensionMismatch("Inconsistent array dimensions for `X` and `centers`."))
-    (2 <= k < n) || error("k must have 2 <= k < n.")
+    (2 <= k < n) || throw(ArgumentError("k must have 2 <= k < n=$n ($k given)."))
     if weights !== nothing
         length(weights) == n || throw(DimensionMismatch("Incorrect length of weights."))
     end
@@ -60,18 +63,17 @@ end
 
 
 """
-    kmeans(X, k, [...])
+    kmeans(X, k, [...]) -> KmeansResult
 
 K-means clustering of the ``d×n`` data matrix `X` (each column of `X`
 is a ``d``-dimensional data point) into `k` clusters.
 
-Returns `KmeansResult` object.
-
-# Algorithm Options
+# Arguments
  - `init` (defaults to `:kmpp`): how cluster seeds should be initialized, could
    be one of the following:
    * a `Symbol`, the name of a seeding algorithm (see [Seeding](@ref) for a list
-     of supported methods).
+     of supported methods);
+   * an instance of [`SeedingAlgorithm`](@ref);
    * an integer vector of length ``k`` that provides the indices of points to
      use as initial seeds.
  - `weights`: ``n``-element vector of point weights (the cluster centers are
@@ -81,7 +83,8 @@ Returns `KmeansResult` object.
 function kmeans(X::AbstractMatrix{<:Real},                # in: data matrix (d x n) columns = obs
                 k::Integer;                               # in: number of centers
                 weights::Union{Nothing, AbstractVector{<:Real}}=nothing, # in: data point weights (n)
-                init::Symbol=_kmeans_default_init,        # in: initialization algorithm
+                init::Union{Symbol, SeedingAlgorithm, AbstractVector{<:Integer}}=
+                        _kmeans_default_init,             # in: initialization algorithm
                 maxiter::Integer=_kmeans_default_maxiter, # in: maximum number of iterations
                 tol::Real=_kmeans_default_tol,            # in: tolerance  of change at convergence
                 display::Symbol=_kmeans_default_display,  # in: level of display

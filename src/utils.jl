@@ -3,6 +3,8 @@
 ##### common types
 
 """
+    ClusteringResult
+
 Base type for the output of clustering algorithm.
 """
 abstract type ClusteringResult end
@@ -10,14 +12,14 @@ abstract type ClusteringResult end
 # generic functions
 
 """
-    nclusters(R::ClusteringResult)
+    nclusters(R::ClusteringResult) -> Int
 
 Get the number of clusters.
 """
 nclusters(R::ClusteringResult) = length(R.counts)
 
 """
-    counts(R::ClusteringResult)
+    counts(R::ClusteringResult) -> Vector{Int}
 
 Get the vector of cluster sizes.
 
@@ -26,7 +28,7 @@ Get the vector of cluster sizes.
 counts(R::ClusteringResult) = R.counts
 
 """
-    assignments(R::ClusteringResult)
+    assignments(R::ClusteringResult) -> Vector{Int}
 
 Get the vector of cluster indices for each point.
 
@@ -37,13 +39,11 @@ assignments(R::ClusteringResult) = R.assignments
 
 
 ##### convert display symbol to disp level
+const DisplayLevels = Dict(:none => 0, :final => 1, :iter => 2)
 
-display_level(s::Symbol) =
-    s == :none ? 0 :
-    s == :final ? 1 :
-    s == :iter ? 2 :
-    error("Invalid value for the option 'display'.")
-
+display_level(s::Symbol) = get(DisplayLevels, s) do
+    throw(ArgumentError("Invalid value for the 'display' option: $s."))
+end
 
 ##### update minimum value
 

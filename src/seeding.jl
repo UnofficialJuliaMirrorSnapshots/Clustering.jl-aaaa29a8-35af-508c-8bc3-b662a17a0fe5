@@ -18,6 +18,8 @@
 #
 
 """
+    SeedingAlgorithm
+
 Base type for all seeding algorithms.
 
 Each seeding algorithm should implement the two functions: [`initseeds!`](@ref)
@@ -27,7 +29,7 @@ abstract type SeedingAlgorithm end
 
 """
     initseeds(alg::Union{SeedingAlgorithm, Symbol},
-              X::AbstractMatrix, k::Integer)
+              X::AbstractMatrix, k::Integer) -> Vector{Int}
 
 Select `k` seeds from a ``d×n`` data matrix `X` using the `alg`
 algorithm.
@@ -35,24 +37,22 @@ algorithm.
 `alg` could be either an instance of [`SeedingAlgorithm`](@ref) or a symbolic
 name of the algorithm.
 
-Returns an integer vector of length `k` that contains the indices of
-chosen seeds.
+Returns the vector of `k` seed indices.
 """
 initseeds(alg::SeedingAlgorithm, X::AbstractMatrix{<:Real}, k::Integer) =
     initseeds!(Vector{Int}(undef, k), alg, X)
 
 """
     initseeds_by_costs(alg::Union{SeedingAlgorithm, Symbol},
-                       costs::AbstractMatrix, k::Integer)
+                       costs::AbstractMatrix, k::Integer) -> Vector{Int}
 
 Select `k` seeds from the ``n×n`` `costs` matrix using algorithm `alg`.
 
-Here, ``\\mathrm{costs}_{ij}`` is the cost of assigning points ``i`` and ``j``
+Here, `costs[i, j]` is the cost of assigning points `i`` and ``j``
 to the same cluster. One may, for example, use the squared Euclidean distance
 between the points as the cost.
 
-Returns an integer vector of length `k` that contains the indices of
-chosen seeds.
+Returns the vector of `k` seed indices.
 """
 initseeds_by_costs(alg::SeedingAlgorithm, costs::AbstractMatrix{<:Real}, k::Integer) =
     initseeds_by_costs!(Vector{Int}(undef, k), alg, costs)
@@ -61,7 +61,15 @@ seeding_algorithm(s::Symbol) =
     s == :rand ? RandSeedAlg() :
     s == :kmpp ? KmppAlg() :
     s == :kmcen ? KmCentralityAlg() :
-    error("Unknown seeding algorithm $s")
+    throw(ArgumentError("Unknown seeding algorithm $s"))
+
+function check_seeding_args(n::Integer, k::Integer)
+    k >= 1 || throw(ArgumentError("The number of seeds ($k) must be positive."))
+    k <= n || throw(ArgumentError("Cannot select more seeds ($k) than data points ($n)."))
+end
+
+check_seeding_args(X::AbstractMatrix, iseeds::AbstractVector) =
+    check_seeding_args(size(X, 2), length(iseeds))
 
 initseeds(algname::Symbol, X::AbstractMatrix{<:Real}, k::Integer) =
     initseeds(seeding_algorithm(algname), X, k)::Vector{Int}
@@ -69,30 +77,35 @@ initseeds(algname::Symbol, X::AbstractMatrix{<:Real}, k::Integer) =
 initseeds_by_costs(algname::Symbol, costs::AbstractMatrix{<:Real}, k::Integer) =
     initseeds_by_costs(seeding_algorithm(algname), costs, k)
 
-initseeds(iseeds::Vector{Int}, X::AbstractMatrix{<:Real}, k::Integer) = iseeds
-initseeds_by_costs(iseeds::Vector{Int}, costs::AbstractMatrix{<:Real}, k::Integer) = iseeds
+# use specified vector of seeds
+function initseeds(iseeds::AbstractVector{<:Integer}, X::AbstractMatrix{<:Real}, k::Integer)
+    length(iseeds) == k ||
+        throw(ArgumentError("The length of seeds vector ($(length(iseeds))) differs from the number of seeds requested ($k)"))
+    check_seeding_args(X, iseeds)
+    n = size(X, 2)
+    # check that seed indices are fine
+    for (i, seed) in enumerate(iseeds)
+        (1 <= seed <= n) || throw(ArgumentError("Seed #$i refers to an incorrect data point ($seed)"))
+    end
+    # NOTE no duplicate checks are done, should we?
+    convert(Vector{Int}, iseeds)
+end
+initseeds_by_costs(iseeds::AbstractVector{<:Integer}, costs::AbstractMatrix{<:Real}, k::Integer) =
+    initseeds(iseeds, costs, k) # NOTE: passing costs as X, but should be fine since only size(X, 2) is used
 
-function copyseeds!(S::Matrix{<:AbstractFloat}, X::AbstractMatrix{<:Real},
+function copyseeds!(S::AbstractMatrix{<:AbstractFloat},
+                    X::AbstractMatrix{<:Real},
                     iseeds::AbstractVector)
     d, n = size(X)
     k = length(iseeds)
-    size(S) == (d, k) || throw(DimensionMismatch("Inconsistent array dimensions."))
-    for j = 1:k
-        copyto!(view(S, :, j), view(X, :, iseeds[j]))
-    end
-    return S
-end
-
-# NOTE: this should eventually be removed as only `copyseeds!` is used in `kmeans`.
-copyseeds(X::AbstractMatrix{<:Real}, iseeds::AbstractVector) =
-    copyseeds!(Matrix{eltype(X)}(undef, size(X, 1), length(iseeds)), X, iseeds)
-
-function check_seeding_args(n::Integer, k::Integer)
-    k >= 1 || error("The number of seeds must be positive.")
-    k <= n || error("Attempted to select more seeds than data points.")
+    size(S) == (d, k) ||
+        throw(DimensionMismatch("Inconsistent seeds matrix dimensions: $((d, k)) expected, $(size(S)) given."))
+    return copyto!(S, view(X, :, iseeds))
 end
 
 """
+    RandSeedAlg <: SeedingAlgorithm
+
 Random seeding (`:rand`).
 
 Chooses an arbitrary subset of ``k`` data points as cluster seeds.
@@ -101,38 +114,41 @@ struct RandSeedAlg <: SeedingAlgorithm end
 
 """
     initseeds!(iseeds::AbstractVector{Int}, alg::SeedingAlgorithm,
-               X::AbstractMatrix)
+               X::AbstractMatrix) -> iseeds
 
 Initialize `iseeds` with the indices of cluster seeds for the `X` data matrix
 using the `alg` seeding algorithm.
-
-Returns `iseeds`.
 """
-initseeds!(iseeds::IntegerVector, alg::RandSeedAlg, X::AbstractMatrix{<:Real}) =
+function initseeds!(iseeds::IntegerVector, alg::RandSeedAlg, X::AbstractMatrix{<:Real})
+    check_seeding_args(X, iseeds)
     sample!(1:size(X, 2), iseeds; replace=false)
+end
 
 """
     initseeds_by_costs!(iseeds::AbstractVector{Int}, alg::SeedingAlgorithm,
-                        costs::AbstractMatrix)
+                        costs::AbstractMatrix) -> iseeds
 
 Initialize `iseeds` with the indices of cluster seeds for the `costs` matrix
 using the `alg` seeding algorithm.
 
-Here, ``\\mathrm{costs}_{ij}`` is the cost of assigning points ``i`` and ``j``
+Here, `costs[i, j]` is the cost of assigning points ``i`` and ``j``
 to the same cluster. One may, for example, use the squared Euclidean distance
 between the points as the cost.
-
-Returns `iseeds`.
 """
-initseeds_by_costs!(iseeds::IntegerVector, alg::RandSeedAlg, X::AbstractMatrix{<:Real}) =
+function initseeds_by_costs!(iseeds::IntegerVector, alg::RandSeedAlg, X::AbstractMatrix{<:Real})
+    check_seeding_args(X, iseeds)
     sample!(1:size(X,2), iseeds; replace=false)
+end
 
 """
+    KmppAlg <: SeedingAlgorithm
+
 Kmeans++ seeding (`:kmpp`).
 
 Chooses the seeds sequentially. The probability of a point to be chosen is
 proportional to the minimum cost of assigning it to the existing seeds.
 
+# References
 > D. Arthur and S. Vassilvitskii (2007).
 > *k-means++: the advantages of careful seeding.*
 > 18th Annual ACM-SIAM symposium on Discrete algorithms, 2007.
@@ -140,7 +156,8 @@ proportional to the minimum cost of assigning it to the existing seeds.
 struct KmppAlg <: SeedingAlgorithm end
 
 function initseeds!(iseeds::IntegerVector, alg::KmppAlg,
-                    X::AbstractMatrix{<:Real}, metric::PreMetric)
+                    X::AbstractMatrix{<:Real},
+                    metric::PreMetric = SqEuclidean())
     n = size(X, 2)
     k = length(iseeds)
     check_seeding_args(n, k)
@@ -169,9 +186,6 @@ function initseeds!(iseeds::IntegerVector, alg::KmppAlg,
 
     return iseeds
 end
-
-initseeds!(iseeds::IntegerVector, alg::KmppAlg, X::AbstractMatrix{<:Real}) =
-    initseeds!(iseeds, alg, X, SqEuclidean())
 
 function initseeds_by_costs!(iseeds::IntegerVector, alg::KmppAlg,
                              costs::AbstractMatrix{<:Real})
@@ -202,10 +216,13 @@ function initseeds_by_costs!(iseeds::IntegerVector, alg::KmppAlg,
 end
 
 """
+    KmCentralityAlg <: SeedingAlgorithm
+
 K-medoids initialization based on centrality (`:kmcen`).
 
 Choose the ``k`` points with the highest *centrality* as seeds.
 
+# References
 > Hae-Sang Park and Chi-Hyuck Jun.
 > *A simple and fast algorithm for K-medoids clustering.*
 > doi:10.1016/j.eswa.2008.01.039
@@ -217,7 +234,7 @@ function initseeds_by_costs!(iseeds::IntegerVector, alg::KmCentralityAlg,
 
     n = size(costs, 1)
     k = length(iseeds)
-    k <= n || error("Attempted to select more seeds than points.")
+    check_seeding_args(n, k)
 
     # compute score for each item
     coefs = vec(sum(costs, dims=2))
@@ -227,8 +244,6 @@ function initseeds_by_costs!(iseeds::IntegerVector, alg::KmCentralityAlg,
 
     # scores[j] = \sum_j costs[i,j] / (\sum_{j'} costs[i,j'])
     #           = costs[i,j] * coefs[i]
-    #
-    # So this is matrix-vector multiplication
     scores = costs'coefs
 
     # lower score indicates better seeds
@@ -239,8 +254,6 @@ function initseeds_by_costs!(iseeds::IntegerVector, alg::KmCentralityAlg,
     return iseeds
 end
 
-initseeds!(iseeds::IntegerVector, alg::KmCentralityAlg, X::AbstractMatrix{<:Real}, metric::PreMetric) =
+initseeds!(iseeds::IntegerVector, alg::KmCentralityAlg, X::AbstractMatrix{<:Real},
+           metric::PreMetric = SqEuclidean()) =
     initseeds_by_costs!(iseeds, alg, pairwise(metric, X, dims=2))
-
-initseeds!(iseeds::IntegerVector, alg::KmCentralityAlg, X::AbstractMatrix{<:Real}) =
-    initseeds!(iseeds, alg, X, SqEuclidean())

@@ -21,6 +21,17 @@ end
 
 @testset "kmeans() (k-means)" begin
 
+@testset "Argument checks" begin
+    Random.seed!(34568)
+    @test_throws ArgumentError kmeans(randn(2, 3), 1)
+    @test_throws ArgumentError kmeans(randn(2, 3), 4)
+    @test kmeans(randn(2, 3), 2) isa KmeansResult
+    @test_throws ArgumentError kmeans(randn(2, 3), 2, display=:mylog)
+    for disp in keys(Clustering.DisplayLevels)
+        @test kmeans(randn(2, 3), 2, display=disp) isa KmeansResult
+    end
+end
+
 Random.seed!(34568)
 
 m = 3
@@ -43,7 +54,7 @@ equal_kmresults(km1::KmeansResult, km2::KmeansResult) =
     @test length(r.costs) == n
     @test length(r.counts) == k
     @test sum(r.counts) == n
-    @test r.cweights == map(Float64, r.counts)
+    @test r.cweights == r.counts
     @test sum(r.costs) ≈ r.totalcost
 
     Random.seed!(34568)
@@ -63,7 +74,7 @@ end
     @test length(r.costs) == n
     @test length(r.counts) == k
     @test sum(r.counts) == n
-    @test r.cweights == map(Float64, r.counts)
+    @test r.cweights == r.counts
     @test sum(r.costs) ≈ r.totalcost
 
     Random.seed!(34568)
@@ -106,13 +117,33 @@ end
     @test length(r.costs) == n
     @test length(r.counts) == k
     @test sum(r.counts) == n
-    @test r.cweights == map(Float64, r.counts)
+    @test r.cweights == r.counts
     @test sum(r.costs) ≈ r.totalcost
     @test equal_kmresults(r, r2)
 
     Random.seed!(34568)
     r_t = kmeans(xt', k; maxiter=50, init=:kmcen, distance=MySqEuclidean())
     @test equal_kmresults(r, r_t)
+end
+
+@testset "Argument checks" begin
+    Random.seed!(34568)
+    n = 50
+    k = 10
+    x = randn(m, n)
+
+    @testset "init=" begin
+        @test_throws ArgumentError kmeans(x, k, init=1:(k-2))
+        @test_throws ArgumentError kmeans(x, k, init=1:(k+2))
+        @test kmeans(x, k, init=1:k, maxiter=5) isa KmeansResult
+
+        @test_throws ArgumentError kmeans(x, k, init=:myseeding)
+        for algname in (:kmpp, :kmcen, :rand)
+            alg = Clustering.seeding_algorithm(algname)
+            @test kmeans(x, k, init=algname) isa KmeansResult
+            @test kmeans(x, k, init=alg) isa KmeansResult
+        end
+    end
 end
 
 @testset "Integer data" begin
@@ -142,4 +173,5 @@ end
         end
     end
 end
+
 end
